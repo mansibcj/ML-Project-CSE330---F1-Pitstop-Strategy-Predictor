@@ -1,0 +1,48 @@
+season	- Year (2018–2024)
+round_number -	Race number in season
+race_name - Grand Prix
+driver -	Driver abbreviation
+team -	Constructor
+grid_position -	Starting position
+qualifying_position -	Q3/Q2/Q1 result
+driver_experience -	Races completed before this race (derived)
+lap_number	Current lap
+lap_time	Current lap time
+lap_time_delta_prev	Difference from previous lap
+sector1_time	S1
+sector2_time	S2
+sector3_time	S3
+personal_best	Is lap PB
+position	Track position on lap
+position_change	Change from previous lap
+gap_to_leader	Time gap
+gap_to_car_ahead	Critical for undercut/overcut
+current_compound	Soft / Medium / Hard
+tire_age_laps	Laps completed on current tires
+tire_life_remaining_est	Derived from compound averages
+stint_number	1st stint, 2nd stint, etc
+is_new_tire	Boolean
+laps_since_last_pit	Redundant but useful
+avg_lap_time_on_stint	Pace trend
+cars_within_2s_ahead	Traffic indicator
+cars_within_2s_behind	Undercut threat
+is_in_drs	Boolean
+is_being_attacked	Derived
+is_stuck_in_train	Derived
+total_pit_stops_so_far	Count
+last_pit_lap	Lap number
+last_pit_duration	Seconds
+avg_pit_time_team	Team-level
+safety_car_pit	Was last pit under SC
+top_speed	From telemetry
+throttle_avg	Driver push level
+brake_usage	Tire stress indicator
+track_temperature	°C
+air_temperature	°C
+humidity	%
+track_status	Green / Yellow / SC / VSC
+
+
+Target	Type
+pit_this_lap	Binary (0 / 1)
+next_tire_compound	Multi-class
