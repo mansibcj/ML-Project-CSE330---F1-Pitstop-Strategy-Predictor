@@ -20,19 +20,19 @@ csv_files = glob.glob("**/*.csv", recursive=True)
 csv_files = [f for f in csv_files if "dataset" in f.lower() or "20" in f]
 
 if not csv_files:
-    print("\n❌ Error: Still no CSV files found.")
+    print("\n Error: Still no CSV files found.")
     print("Files found in current directory:", os.listdir())
     print("If you are in Colab, try dragging the files out of the folder and into the main area.")
     # Fallback: Force upload if search fails
     try:
         from google.colab import files
-        print("\n⬇️ Launching Manual Upload as fallback... ⬇️")
+        print("\n Launching Manual Upload as fallback... ")
         uploaded = files.upload()
         csv_files = list(uploaded.keys())
     except:
         raise ValueError("Could not find files automatically and manual upload failed.")
 else:
-    print(f"\n✅ Found {len(csv_files)} datasets: {csv_files}")
+    print(f"\n Found {len(csv_files)} datasets: {csv_files}")
 
 # --- STEP 2: LOAD DATA ---
 data_frames = []
@@ -56,7 +56,7 @@ cols_needed = ['driver', 'lap_number', 'lap_time', 'tire_age_laps', 'current_com
 # Check if columns exist
 missing = [c for c in cols_needed if c not in full_data.columns]
 if missing:
-    print(f"⚠️ Warning: Your CSV is missing these columns: {missing}")
+    print(f" Warning: Your CSV is missing these columns: {missing}")
     print("Available columns:", full_data.columns.tolist())
     raise ValueError("Please check your dataset column names.")
 
