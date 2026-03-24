@@ -1,0 +1,412 @@
+# ==============================
+# BLOCK 1: IMPORTS & CONFIG
+# ==============================
+
+import numpy as np
+import pandas as pd
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.utils.data import Dataset, DataLoader
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import f1_score, precision_score, recall_score, roc_auc_score
+from tqdm import tqdm
+
+# ------------------------------
+# HYPERPARAMETERS (TUNE HERE)
+# ------------------------------
+
+SEQ_LEN = 20                  # How many previous laps to look at
+BATCH_SIZE = 64
+EPOCHS = 20
+LR = 3e-4                     # Learning rate
+D_MODEL = 128                 # Transformer hidden size
+NHEAD = 4                     # Attention heads
+NUM_LAYERS = 3                # Transformer layers
+DROPOUT = 0.1
+ALPHA = 1.0                   # Weight for pit loss
+BETA = 0.5                    # Weight for tire loss
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+
+# ==============================
+# BLOCK 2: LOAD DATA
+# ==============================
+
+data_path = "/Users/nurulmansibtalukder/Desktop/WAY TO EVERYTHING/BUET_STUFFS/3-2/CSE 330 - Machine Learning Sessional/ML-Project-CSE330---F1-Pitstop-Strategy-Predictor/src/f1_complete_dataset_2020_2024.csv"
+df = pd.read_csv(data_path)
+
+df.head()
+
+# ==============================
+# BLOCK 3: FEATURE ENGINEERING 
+# ==============================
+
+# ------------------------------------------------------
+# Convert timedelta columns to numeric seconds
+# ------------------------------------------------------
+
+time_cols = [
+    "sector1_time",
+    "sector2_time",
+    "sector3_time",
+    "gap_to_leader",
+    "gap_to_car_ahead"
+]
+
+for col in time_cols:
+    df[col] = pd.to_timedelta(df[col], errors="coerce").dt.total_seconds()
+
+# Fill any missing time values with 0
+df[time_cols] = df[time_cols].fillna(0)
+
+
+# ------------------------------------------------------
+#  Define grouping columns (correct for your dataset)
+# ------------------------------------------------------
+
+group_cols = ["season", "round_number", "driver"]
+
+
+# ------------------------------------------------------
+# Sort properly before computing sequential features
+# ------------------------------------------------------
+
+df = df.sort_values(by=group_cols + ["lap_number"])
+
+
+# ------------------------------------------------------
+#  Degradation Feature (lap-to-lap time delta)
+# ------------------------------------------------------
+
+df["degradation"] = (
+    df.groupby(group_cols)["lap_time"]
+    .diff()
+    .fillna(0)
+)
+
+
+# ------------------------------------------------------
+#  Rolling Average of Last 3 Laps
+# ------------------------------------------------------
+
+group_cols = ["season", "round_number", "driver"]
+
+df["rolling_avg_3"] = (
+    df.groupby(group_cols)["lap_time"]
+      .rolling(3)
+      .mean()
+      .reset_index(level=group_cols, drop=True)
+)
+
+df["rolling_avg_3"] = df["rolling_avg_3"].bfill()
+
+# ------------------------------------------------------
+#  Undercut Flag
+#    (Car close ahead AND tire relatively old)
+# ------------------------------------------------------
+
+df["undercut_flag"] = (
+    (df["gap_to_car_ahead"] < 3.0) & 
+    (df["tire_age_laps"] > 10)
+).astype(int)
+
+
+# ------------------------------------------------------
+#  Target Columns (Correct Names)
+# ------------------------------------------------------
+
+# Pit decision (binary)
+df["pit_label"] = df["pit_this_lap"]
+
+# Tire compound (categorical → numeric)
+df["tire_label"] = (
+    df["next_tire_compound"]
+    .astype("category")
+    .cat.codes
+)
+
+# Optional: Handle missing tire labels safely
+df["tire_label"] = df["tire_label"].replace(-1, 0)
+
+
+# ==============================
+# BLOCK 4: NORMALIZATION (FIXED)
+# ==============================
+
+from sklearn.preprocessing import StandardScaler
+
+# Continuous features (matching your dataset)
+continuous_cols = [
+    "lap_number",
+    "position",
+    "gap_to_leader",
+    "gap_to_car_ahead",
+    "lap_time",
+    "sector1_time",
+    "sector2_time",
+    "sector3_time",
+    "track_temperature",
+    "air_temperature",
+    "humidity",
+    "tire_age_laps",
+    "degradation",
+    "rolling_avg_3",
+]
+
+# Fill missing values safely
+df[continuous_cols] = df[continuous_cols].fillna(df[continuous_cols].median())
+
+# Scale
+scaler = StandardScaler()
+df[continuous_cols] = scaler.fit_transform(df[continuous_cols])
+
+print("Normalization Done ✅")
+
+# ==============================
+# ENCODE DRIVER & TRACK
+# ==============================
+# Encode driver and track into numeric IDs
+df["driver_id"] = df["driver"].astype("category").cat.codes
+df["track_id"] = df["race_name"].astype("category").cat.codes
+
+num_drivers = df["driver_id"].nunique()
+num_tracks = df["track_id"].nunique()
+
+# Encode tire compound dynamically
+# Encode tire compound safely
+df["tire_label"] = df["next_tire_compound"].astype("category").cat.codes
+
+# Replace -1 with 0 temporarily (won't matter because masked)
+df["tire_label"] = df["tire_label"].replace(-1, 0)
+
+# IMPORTANT: Only keep tire_label meaningful when pit occurs
+df.loc[df["pit_label"] == 0, "tire_label"] = 0
+
+
+
+print("Drivers:", num_drivers)
+print("Tracks:", num_tracks)
+print("Tire Classes:", num_tire_classes)
+
+
+# ==============================
+# BLOCK 5: SEQUENCE CREATION (FULLY FIXED)
+# ==============================
+
+def create_sequences(df, seq_len, feature_cols):
+
+    sequences = []
+    group_cols = ["season", "round_number", "driver"]
+
+    grouped = df.groupby(group_cols)
+
+    for _, group in grouped:
+
+        group = group.sort_values("lap_number").reset_index(drop=True)
+
+        feature_array = group[feature_cols].values
+
+        driver_id = int(group["driver_id"].iloc[0])
+        track_id = int(group["track_id"].iloc[0])
+
+        for i in range(len(group) - seq_len):
+
+            seq_features = feature_array[i:i+seq_len]
+            target_row = group.iloc[i+seq_len]
+
+            sequences.append({
+                "features": seq_features,
+                "driver_id": driver_id,
+                "track_id": track_id,
+                "pit_label": int(target_row["pit_label"]),
+                "tire_label": int(target_row["tire_label"])
+            })
+
+    return sequences
+
+
+feature_cols = continuous_cols + ["undercut_flag"]
+
+sequences = create_sequences(df, SEQ_LEN, feature_cols)
+
+print("Total sequences:", len(sequences))
+
+
+# ==============================
+# BLOCK 6: DATASET CLASS (FIXED)
+# ==============================
+
+from torch.utils.data import Dataset, DataLoader
+
+class F1Dataset(Dataset):
+    def __init__(self, sequences):
+        self.sequences = sequences
+        
+    def __len__(self):
+        return len(self.sequences)
+    
+    def __getitem__(self, idx):
+
+        item = self.sequences[idx]
+
+        return (
+            torch.tensor(item["features"], dtype=torch.float32),
+            torch.tensor(item["driver_id"], dtype=torch.long),
+            torch.tensor(item["track_id"], dtype=torch.long),
+            torch.tensor(item["pit_label"], dtype=torch.float32),
+            torch.tensor(item["tire_label"], dtype=torch.long)
+        )
+
+
+dataset = F1Dataset(sequences)
+dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
+
+print("Dataset Ready")
+
+# ==============================
+# BLOCK 7: TRANSFORMER MODEL
+# ==============================
+
+class PitTransformer(nn.Module):
+    def __init__(self, input_dim, num_drivers, num_tracks, num_tire_classes):
+        super().__init__()
+        
+        self.driver_emb = nn.Embedding(num_drivers, 8)
+        self.track_emb = nn.Embedding(num_tracks, 8)
+        
+        self.input_proj = nn.Linear(input_dim + 16, D_MODEL)
+        
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=D_MODEL,
+            nhead=NHEAD,
+            dropout=DROPOUT,
+            batch_first=True
+        )
+        
+        self.transformer = nn.TransformerEncoder(
+            encoder_layer,
+            num_layers=NUM_LAYERS
+        )
+        
+        self.pit_head = nn.Linear(D_MODEL, 1)
+        self.tire_head = nn.Linear(D_MODEL, num_tire_classes)
+
+    def forward(self, x, driver_id, track_id):
+
+        driver_emb = self.driver_emb(driver_id)
+        track_emb = self.track_emb(track_id)
+
+        context = torch.cat([driver_emb, track_emb], dim=1)
+        context = context.unsqueeze(1).repeat(1, x.size(1), 1)
+
+        x = torch.cat([x, context], dim=2)
+        x = self.input_proj(x)
+        x = self.transformer(x)
+
+        h_t = x[:, -1, :]
+
+        pit_logits = self.pit_head(h_t)
+        tire_logits = self.tire_head(h_t)
+
+        return pit_logits, tire_logits
+
+
+# ==============================
+# BLOCK 8: LOSS FUNCTIONS
+# ==============================
+class FocalLoss(nn.Module):
+    def __init__(self, gamma=2):
+        super().__init__()
+        self.gamma = gamma
+    
+    def forward(self, logits, targets):
+        bce = F.binary_cross_entropy_with_logits(
+            logits, targets.unsqueeze(1), reduction='none'
+        )
+        pt = torch.exp(-bce)
+        loss = ((1 - pt) ** self.gamma) * bce
+        return loss.mean()
+
+
+pit_loss_fn = FocalLoss(gamma=2)
+tire_loss_fn = nn.CrossEntropyLoss()
+
+
+# ==============================
+# BLOCK 9: TRAINING LOOP (FIXED)
+# ==============================
+model = PitTransformer(
+    input_dim=len(feature_cols),
+    num_drivers=num_drivers,
+    num_tracks=num_tracks,
+    num_tire_classes=num_tire_classes
+).to(DEVICE)
+
+optimizer = torch.optim.AdamW(model.parameters(), lr=LR)
+
+for epoch in range(EPOCHS):
+
+    model.train()
+    total_loss = 0
+
+    for x, driver_id, track_id, pit_label, tire_label in dataloader:
+
+        x = x.to(DEVICE)
+        driver_id = driver_id.to(DEVICE)
+        track_id = track_id.to(DEVICE)
+        pit_label = pit_label.to(DEVICE)
+        tire_label = tire_label.to(DEVICE)
+
+        optimizer.zero_grad()
+
+        pit_logits, tire_logits = model(x, driver_id, track_id)
+
+        pit_loss = pit_loss_fn(pit_logits, pit_label)
+
+        tire_mask = (pit_label == 1) & (tire_label >= 0)
+        if tire_mask.sum() > 0:
+            tire_loss = tire_loss_fn(
+                tire_logits[tire_mask], 
+                tire_label[tire_mask]
+            )
+        else:
+            tire_loss = torch.tensor(0.0, device=DEVICE)
+
+        loss = ALPHA * pit_loss + BETA * tire_loss
+
+        loss.backward()
+        optimizer.step()
+
+        total_loss += loss.item()
+
+    print(f"Epoch {epoch+1}, Loss: {total_loss/len(dataloader):.4f}")
+
+
+    # ==============================
+# BLOCK 10: EVALUATION (FIXED)
+# ==============================
+
+model.eval()
+
+all_preds = []
+all_targets = []
+
+with torch.no_grad():
+    for x, driver_id, track_id, pit_label, tire_label in dataloader:
+
+        x = x.to(DEVICE)
+        driver_id = driver_id.to(DEVICE)
+        track_id = track_id.to(DEVICE)
+
+        pit_logits, _ = model(x, driver_id, track_id)
+
+        probs = torch.sigmoid(pit_logits).cpu().numpy()
+        preds = (probs > 0.5).astype(int)
+
+        all_preds.extend(preds.flatten())
+        all_targets.extend(pit_label.numpy())
+
+print("F1:", f1_score(all_targets, all_preds))
+print("Precision:", precision_score(all_targets, all_preds))
+print("Recall:", recall_score(all_targets, all_preds))
+
