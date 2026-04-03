@@ -1,0 +1,57 @@
+#1
+Bi-LSTM F1 Pit Stop Prediction — Results  [v4]
+======================================================
+Threshold: 0.9796
+
+Core Metrics (minority class — pit_this_lap=1):
+  Precision         : 0.7317
+  Recall            : 0.8372
+  F1-Score          : 0.7809  CI [0.739, 0.822]
+  Specificity       : 0.9899
+  Balanced Accuracy : 0.9136  CI [0.888, 0.938]
+  ROC-AUC           : 0.9740  CI [0.959, 0.986]
+  AUC-PR            : 0.8626  CI [0.820, 0.900]
+
+Confusion Matrix:
+  TN: 6477  FP:   66
+  FN:   35  TP:  180
+
+Hyperparameters:
+  LEARNING_RATE  : 0.0001
+  BATCH_SIZE     : 32
+  CLASS_WEIGHTS  : {0: 1.0, 1: 25.0}
+  SEQUENCE_LEN   : 10
+  LSTM_UNITS     : [512, 256, 128]
+  DROPOUT_RATES  : [0.2, 0.3, 0.3]
+  RECURRENT_DROP : [0.2, 0.2, 0.2]
+  ES_PATIENCE    : 12
+  LR_PATIENCE    : 6
+
+#2
+Bi-LSTM F1 Pit Stop Prediction — Results  [v4]
+======================================================
+Threshold: 0.9826
+
+Core Metrics (minority class — pit_this_lap=1):
+  Precision         : 0.9444
+  Recall            : 0.8698
+  F1-Score          : 0.9056  CI [0.875, 0.933]
+  Specificity       : 0.9983
+  Balanced Accuracy : 0.9340  CI [0.912, 0.955]
+  ROC-AUC           : 0.9847  CI [0.977, 0.991]
+  AUC-PR            : 0.9118  CI [0.878, 0.942]
+
+Confusion Matrix:
+  TN: 6532  FP:   11
+  FN:   28  TP:  187
+
+Hyperparameters:
+  LEARNING_RATE  : 0.0001
+  BATCH_SIZE     : 32
+  CLASS_WEIGHTS  : {0: 1.0, 1: 25.0}
+  SEQUENCE_LEN   : 10
+  LSTM_UNITS     : [512, 256, 128]
+  DROPOUT_RATES  : [0.2, 0.3, 0.3]
+  RECURRENT_DROP : [0.2, 0.2, 0.2]
+  ES_PATIENCE    : 12
+  LR_PATIENCE    : 6

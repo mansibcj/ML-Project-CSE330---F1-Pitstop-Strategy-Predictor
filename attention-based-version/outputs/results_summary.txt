@@ -1,27 +1,16 @@
-Bi-LSTM F1 Pit Stop Prediction — Results  [v4]
+Bi-LSTM F1 Pit Stop Prediction — Results [v4]
 ======================================================
-Threshold: 0.9737
+Threshold: 0.9232
 
-Core Metrics (minority class — pit_this_lap=1):
-  Precision         : 0.8011
-  Recall            : 0.6930
-  F1-Score          : 0.7431  CI [0.692, 0.789]
-  Specificity       : 0.9943
-  Balanced Accuracy : 0.8437  CI [0.813, 0.874]
-  ROC-AUC           : 0.9614  CI [0.945, 0.975]
-  AUC-PR            : 0.7819  CI [0.730, 0.829]
+Metrics (pit_this_lap=1):
+  Precision         : 0.9497
+  Recall            : 0.7907
+  F1-Score          : 0.8629  CI [0.825, 0.900]
+  Specificity       : 0.9986
+  Balanced Accuracy : 0.8947  CI [0.867, 0.922]
+  ROC-AUC           : 0.9778  CI [0.964, 0.989]
+  AUC-PR            : 0.9058  CI [0.873, 0.937]
 
 Confusion Matrix:
-  TN: 6506  FP:   37
-  FN:   66  TP:  149
-
-Hyperparameters:
-  LEARNING_RATE  : 0.0001
-  BATCH_SIZE     : 64
-  CLASS_WEIGHTS  : {0: 1.0, 1: 25.0}
-  SEQUENCE_LEN   : 10
-  LSTM_UNITS     : [512, 256, 128]
-  DROPOUT_RATES  : [0.2, 0.3, 0.3]
-  RECURRENT_DROP : [0.2, 0.2, 0.2]
-  ES_PATIENCE    : 12
-  LR_PATIENCE    : 6
+  TN: 6534  FP:    9
+  FN:   45  TP:  170
